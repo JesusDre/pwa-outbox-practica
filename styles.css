@@ -1,0 +1,95 @@
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  background: #f2f4f7;
+  color: #1f2933;
+}
+
+header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  padding: 1rem 1.5rem;
+  background: #1e3a5f;
+  color: #fff;
+}
+header h1 { font-size: 1.2rem; margin: 0; }
+
+.badge {
+  padding: .3rem .8rem;
+  border-radius: 999px;
+  font-size: .8rem;
+  font-weight: 600;
+}
+.badge.online  { background: #d1fae5; color: #065f46; }
+.badge.offline { background: #fee2e2; color: #991b1b; }
+
+main {
+  max-width: 720px;
+  margin: 1.5rem auto;
+  padding: 0 1rem;
+  display: grid;
+  gap: 1.5rem;
+}
+
+.card {
+  background: #fff;
+  border-radius: 12px;
+  padding: 1.25rem;
+  box-shadow: 0 1px 3px rgba(0,0,0,.08);
+}
+.card h2 { margin-top: 0; font-size: 1.05rem; }
+
+form { display: grid; gap: .75rem; }
+input, textarea {
+  width: 100%;
+  padding: .65rem;
+  border: 1px solid #cbd2d9;
+  border-radius: 8px;
+  font: inherit;
+}
+textarea { min-height: 90px; resize: vertical; }
+
+button {
+  padding: .65rem 1rem;
+  border: none;
+  border-radius: 8px;
+  background: #1e3a5f;
+  color: #fff;
+  font-weight: 600;
+  cursor: pointer;
+}
+button:hover { background: #274b7a; }
+#btn-purgar { background: #b91c1c; }
+#btn-purgar:hover { background: #991b1b; }
+
+.header-lista {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: .75rem;
+}
+.header-lista h2 { margin: 0; }
+
+#lista-outbox { list-style: none; margin: 0; padding: 0; display: grid; gap: .5rem; }
+#lista-outbox li {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: .75rem;
+  padding: .7rem .9rem;
+  border: 1px solid #e4e7eb;
+  border-radius: 8px;
+}
+.item-titulo { font-weight: 600; }
+.item-hora { font-size: .8rem; color: #616e7c; }
+
+.estado { padding: .2rem .6rem; border-radius: 999px; font-size: .75rem; font-weight: 600; }
+.estado.pendiente    { background: #fef3c7; color: #92400e; }
+.estado.sincronizado { background: #d1fae5; color: #065f46; }
+
+.vacio { color: #7b8794; font-style: italic; }
