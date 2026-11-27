@@ -85,8 +85,6 @@ button:hover { background: #274b7a; }
   border: 1px solid #e4e7eb;
   border-radius: 8px;
 }
-.item-titulo { font-weight: 600; }
-.item-hora { font-size: .8rem; color: #616e7c; }
 
 .estado { padding: .2rem .6rem; border-radius: 999px; font-size: .75rem; font-weight: 600; }
 .estado.pendiente    { background: #fef3c7; color: #92400e; }

@@ -1,110 +1,130 @@
 // db-helper.js
-// Mini-wrapper promisificado de IndexedDB.
-// Funciona en la página (<script src="./db-helper.js">) y en el SW (importScripts).
+// Funciones para usar IndexedDB con promesas.
+// Se carga en la página (index.html) y en el Service Worker (importScripts).
 
 const DB_NAME = 'pwa-outbox-db';
 const DB_VERSION = 1;
 const STORE_NAME = 'transacciones_pendientes';
 
-// ---------- Pieza 1: Apertura y migración de esquema ----------
+// ---------- Abrir la base de datos ----------
 function abrirDB() {
-  return new Promise((resolve, reject) => {
+  return new Promise(function (resolve, reject) {
     const request = indexedDB.open(DB_NAME, DB_VERSION);
 
-    // Solo se ejecuta si la BD es nueva o si DB_VERSION subió
-    request.onupgradeneeded = (event) => {
+    // Solo se ejecuta si la base es nueva o si subió DB_VERSION
+    request.onupgradeneeded = function (event) {
       const db = event.target.result;
       if (!db.objectStoreNames.contains(STORE_NAME)) {
+        // autoIncrement genera los id solos: 1, 2, 3...
         db.createObjectStore(STORE_NAME, { keyPath: 'id', autoIncrement: true });
       }
     };
 
-    request.onsuccess = (event) => {
-      const db = event.target.result;
-      // Si en otra pestaña se abre una versión nueva, cerramos esta conexión
-      // para no bloquear la migración.
-      db.onversionchange = () => db.close();
-      resolve(db);
+    request.onsuccess = function (event) {
+      resolve(event.target.result);
     };
 
-    request.onerror = (event) => reject(event.target.error);
+    request.onerror = function (event) {
+      reject(event.target.error);
+    };
   });
 }
 
-// ---------- Pieza 2: Escritura segura (CREATE) ----------
+// ---------- CREATE: guardar un registro ----------
 function guardarRegistro(datos) {
-  return abrirDB().then((db) => {
-    return new Promise((resolve, reject) => {
+  return abrirDB().then(function (db) {
+    return new Promise(function (resolve, reject) {
       const tx = db.transaction([STORE_NAME], 'readwrite');
       const store = tx.objectStore(STORE_NAME);
       const req = store.add(datos);
       let idGenerado;
 
-      req.onsuccess = (event) => {
-        idGenerado = event.target.result; // ID autoincremental
+      req.onsuccess = function (event) {
+        idGenerado = event.target.result;
       };
 
-      // Resolvemos hasta que la transacción se confirma en disco
-      tx.oncomplete = () => resolve(idGenerado);
-      tx.onerror = (event) => reject(event.target.error);
+      // Resolvemos hasta que la transacción termina de guardar en disco
+      tx.oncomplete = function () {
+        resolve(idGenerado);
+      };
+
+      tx.onerror = function (event) {
+        reject(event.target.error);
+      };
     });
   });
 }
 
-// ---------- Pieza 3: Lectura completa (READ) ----------
+// ---------- READ: leer todos los registros ----------
 function obtenerTodosLosRegistros() {
-  return abrirDB().then((db) => {
-    return new Promise((resolve, reject) => {
+  return abrirDB().then(function (db) {
+    return new Promise(function (resolve, reject) {
       const tx = db.transaction([STORE_NAME], 'readonly');
       const store = tx.objectStore(STORE_NAME);
       const req = store.getAll();
 
-      req.onsuccess = (event) => resolve(event.target.result);
-      req.onerror = (event) => reject(event.target.error);
+      req.onsuccess = function (event) {
+        resolve(event.target.result);
+      };
+
+      req.onerror = function (event) {
+        reject(event.target.error);
+      };
     });
   });
 }
 
-// ---------- Pieza 4: Eliminación por llave primaria (DELETE) ----------
+// ---------- DELETE: borrar un registro por su id ----------
 function eliminarRegistro(id) {
-  return abrirDB().then((db) => {
-    return new Promise((resolve, reject) => {
+  return abrirDB().then(function (db) {
+    return new Promise(function (resolve, reject) {
       const tx = db.transaction([STORE_NAME], 'readwrite');
       const store = tx.objectStore(STORE_NAME);
 
       store.delete(id);
 
-      tx.oncomplete = () => resolve(true);
-      tx.onerror = (event) => reject(event.target.error);
+      tx.oncomplete = function () {
+        resolve(true);
+      };
+
+      tx.onerror = function (event) {
+        reject(event.target.error);
+      };
     });
   });
 }
 
-// ---------- Fragmento A: UPDATE de estado (get + put en la misma tx) ----------
+// ---------- UPDATE: cambiar el estado de un registro ----------
+// Leemos (get) y guardamos (put) dentro de la misma transacción.
 function actualizarEstadoRegistro(id, nuevoEstado) {
-  return abrirDB().then((db) => {
-    return new Promise((resolve, reject) => {
+  return abrirDB().then(function (db) {
+    return new Promise(function (resolve, reject) {
       const tx = db.transaction([STORE_NAME], 'readwrite');
       const store = tx.objectStore(STORE_NAME);
 
       // 1. Leer el registro actual
       const reqGet = store.get(id);
 
-      reqGet.onsuccess = (event) => {
+      reqGet.onsuccess = function (event) {
         const registro = event.target.result;
         if (!registro) {
-          reject(new Error(`No se encontró el registro con ID: ${id}`));
+          reject(new Error('No se encontró el registro con ID: ' + id));
           return;
         }
-        // 2. Modificar y sobrescribir
+        // 2. Cambiar el estado y sobrescribir
         registro.estado = nuevoEstado;
         registro.fechaSincronizacion = Date.now();
         store.put(registro);
       };
 
-      // 3. Resolver cuando la transacción se confirma en disco
-      tx.oncomplete = () => resolve(true);
-      tx.onerror = (event) => reject(event.target.error);
+      // 3. Resolver cuando la transacción termina
+      tx.oncomplete = function () {
+        resolve(true);
+      };
+
+      tx.onerror = function (event) {
+        reject(event.target.error);
+      };
     });
   });
 }

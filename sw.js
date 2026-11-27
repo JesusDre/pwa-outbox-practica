@@ -1,10 +1,11 @@
-// sw.js — versión 5.3 (App Shell + Background Sync)
+// sw.js - Service Worker (App Shell + Background Sync)
 
-// Fragmento A: importar el mini-wrapper (ruta relativa) y subir versión
+// Fragmento A: cargar las funciones de IndexedDB dentro del SW
 importScripts('./db-helper.js');
 
-const CACHE_STATIC_NAME = 'static-outbox-v2';
+const CACHE_STATIC_NAME = 'static-outbox-v3';
 const API_URL = 'https://jsonplaceholder.typicode.com/posts';
+
 const STATIC_FILES = [
   './',
   './index.html',
@@ -16,45 +17,56 @@ const STATIC_FILES = [
   './icons/icon-512.png'
 ];
 
-// ===================== Ciclo de vida =====================
-self.addEventListener('install', (event) => {
+// ---------- install: guardar los archivos en caché ----------
+self.addEventListener('install', function (event) {
   event.waitUntil(
     caches.open(CACHE_STATIC_NAME)
-      .then((cache) => cache.addAll(STATIC_FILES))
-      .then(() => self.skipWaiting())
+      .then(function (cache) {
+        return cache.addAll(STATIC_FILES);
+      })
+      .then(function () {
+        return self.skipWaiting(); // activar la nueva versión sin esperar
+      })
   );
 });
 
-self.addEventListener('activate', (event) => {
+// ---------- activate: borrar cachés viejas ----------
+self.addEventListener('activate', function (event) {
   event.waitUntil(
     caches.keys()
-      .then((nombres) => Promise.all(
-        nombres
-          .filter((nombre) => nombre !== CACHE_STATIC_NAME)
-          .map((nombre) => caches.delete(nombre))
-      ))
-      .then(() => self.clients.claim())
+      .then(function (nombres) {
+        const borrados = nombres
+          .filter(function (nombre) {
+            return nombre !== CACHE_STATIC_NAME;
+          })
+          .map(function (nombre) {
+            return caches.delete(nombre);
+          });
+        return Promise.all(borrados);
+      })
+      .then(function () {
+        return self.clients.claim(); // controlar las pestañas ya abiertas
+      })
   );
 });
 
-// FETCH: Cache First solo para GET del mismo origen.
-// Los POST a la API NO se interceptan: si fallan, app.js los encola en IndexedDB.
-self.addEventListener('fetch', (event) => {
-  const req = event.request;
-  if (req.method !== 'GET') return;
-  if (new URL(req.url).origin !== self.location.origin) return;
+// ---------- fetch: Cache First ----------
+self.addEventListener('fetch', function (event) {
+  // Los POST no se guardan en caché: si fallan, app.js los encola
+  if (event.request.method !== 'GET') return;
 
   event.respondWith(
-    caches.match(req, { ignoreSearch: true })
-      .then((enCache) => enCache || fetch(req))
+    caches.match(event.request).then(function (enCache) {
+      return enCache || fetch(event.request);
+    })
   );
 });
 
-// ===================== Fragmento B: avisar a las pestañas =====================
+// ---------- Fragmento B: avisar a las pestañas abiertas ----------
 function notificarClientesActualizacion() {
   return self.clients.matchAll({ type: 'window', includeUncontrolled: true })
-    .then((clientes) => {
-      clientes.forEach((cliente) => {
+    .then(function (clientes) {
+      clientes.forEach(function (cliente) {
         cliente.postMessage({
           tipo: 'OUTBOX_SINCRONIZADO',
           timestamp: Date.now()
@@ -63,49 +75,50 @@ function notificarClientesActualizacion() {
     });
 }
 
-// ===================== Fragmento C: motor de sincronización =====================
+// ---------- Fragmento C: reenviar los pendientes ----------
 function sincronizarPendientesSW() {
-  console.log('[SW-Sync] Ejecutando barrido de transacciones pendientes...');
+  console.log('[SW-Sync] Buscando transacciones pendientes...');
 
-  return obtenerTodosLosRegistros()
-    .then((registros) => {
-      const pendientes = registros.filter((item) => item.estado === 'pendiente');
-
-      if (pendientes.length === 0) {
-        console.log('[SW-Sync] Cola limpia. Nada por sincronizar.');
-        return;
-      }
-
-      const promesasDeEnvio = pendientes.map((item) => {
-        return fetch(API_URL, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ title: item.titulo, body: item.descripcion })
-        })
-          .then((respuesta) => {
-            if (!respuesta.ok) {
-              throw new Error(`Error HTTP ${respuesta.status} al sincronizar ID ${item.id}`);
-            }
-            return actualizarEstadoRegistro(item.id, 'sincronizado');
-          });
-      });
-
-      return Promise.all(promesasDeEnvio)
-        .then(() => notificarClientesActualizacion());
+  return obtenerTodosLosRegistros().then(function (registros) {
+    const pendientes = registros.filter(function (item) {
+      return item.estado === 'pendiente';
     });
+
+    if (pendientes.length === 0) {
+      console.log('[SW-Sync] Nada por sincronizar.');
+      return;
+    }
+
+    const promesasDeEnvio = pendientes.map(function (item) {
+      return fetch(API_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title: item.titulo, body: item.descripcion })
+      })
+        .then(function (respuesta) {
+          if (!respuesta.ok) {
+            throw new Error('Error HTTP ' + respuesta.status + ' al sincronizar ID ' + item.id);
+          }
+          return actualizarEstadoRegistro(item.id, 'sincronizado');
+        });
+    });
+
+    return Promise.all(promesasDeEnvio).then(function () {
+      return notificarClientesActualizacion();
+    });
+  });
 }
 
-// ===================== Fragmento D: evento sync =====================
-self.addEventListener('sync', (event) => {
-  console.log('[SW-Sync] Evento sync disparado con etiqueta:', event.tag);
+// ---------- Fragmento D: evento sync ----------
+self.addEventListener('sync', function (event) {
+  console.log('[SW-Sync] Evento sync con etiqueta:', event.tag);
 
   if (event.tag === 'sync-reportes') {
     event.waitUntil(
-      sincronizarPendientesSW()
-        .catch((error) => {
-          console.error('[SW-Sync] Falla en sincronización; el navegador reintentará luego:', error);
-          throw error; // relanzar = la promesa de waitUntil se rechaza → reintento automático
-        })
+      sincronizarPendientesSW().catch(function (error) {
+        console.error('[SW-Sync] Falló; el navegador reintentará luego:', error);
+        throw error; // relanzar = el navegador programa un reintento
+      })
     );
   }
 });
